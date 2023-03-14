@@ -5,11 +5,12 @@ import numpy as np
 from tifffile import imsave
 from skimage.draw import disk
 
-def ComputePSD(particle_Sizes):
+def ComputePSD(particle_Sizes, x_min, x_max, nbins):
     
     Gauss_sample = np.log(particle_Sizes)
 
-    Gauss_bins = np.histogram_bin_edges(Gauss_sample, bins='auto')
+    # Gauss_bins = np.histogram_bin_edges(Gauss_sample, bins='auto')
+    Gauss_bins = np.histogram_bin_edges(Gauss_sample, bins=nbins, range=(math.log(x_min), math.log(x_max)))
     bins = np.exp(Gauss_bins)
     
     # getting data of the histogram
@@ -50,7 +51,7 @@ class Particle:
     
 
 class Particles:
-    """A class for drawing particles-inside-a-circle."""
+    """A class for drawing particles"""
 
     def __init__(self, width=2048, height=2048, depth=1000, n=5, x_median=50,
                  x_sigma=2.5, monodisperse=False, colours=None):
@@ -65,7 +66,7 @@ class Particles:
         self.monodisperse=monodisperse
 
 
-    def print_particles(self, image, Foreground_Brightness, *args, **kwargs):
+    def print_particles(self, image, ForegroundBrightness, *args, **kwargs):
                      
         img_height,img_width = image.shape
         
@@ -76,21 +77,20 @@ class Particles:
 
                 ### For circular particles ########                
                 rr, cc = disk((Particle.cx, Particle.cy), Particle.r, shape=image.shape)                                                    
-                image[rr, cc] = Foreground_Brightness
+                image[rr, cc] = ForegroundBrightness
                 self.particles_sizes.append(Particle.r*2)
                 # #####################################
                         
                 # does the particle touch the the image boundaries (incomplete boundary  particle)?
                 # TODO resolve the difference to the boundary check in _place_particle().
                 # Define: Where is the coordinate of a pixel? at the center or at the lower left corner of the pixel (preferred)
-                # Examine the above disk funktion of skimage.draw
                 if int(Particle.cx - Particle.r + .5) <= 0 or int(Particle.cy - Particle.r + .5) <= 0 or int(Particle.cx + Particle.r +.5) >= img_width or int(Particle.cy + Particle.r + .5) >= img_height:
                     self.boundary_particles.append(True)
                 else:
                     self.boundary_particles.append(False)
                     
 
-    def _place_particle(self, r, image, excludeBorderParticles, minSpacing):
+    def _place_particle(self, r, image, excludeBorderParticles, MinSpacing):
         """Place the particles inside the generation volume."""
         img_height,img_width = image.shape
         # The trials number: if a particle with a given size is not succesfully placed within this number
@@ -107,14 +107,14 @@ class Particles:
             cy = self.height*np.random.random()
             cz = self.depth*np.random.random()
             # check if the particle touches the image boundaries
-            if cx - (r + minSpacing) <= 0 or cy - (r + minSpacing) <= 0  or cx + (r + minSpacing) >= img_width or cy + (r + minSpacing) >= img_height:
+            if cx - (r + MinSpacing) <= 0 or cy - (r + MinSpacing) <= 0  or cx + (r + MinSpacing) >= img_width or cy + (r + MinSpacing) >= img_height:
                 boundary_particle = True
             else:
                 boundary_particle = False
             
             if (excludeBorderParticles and not boundary_particle) or (not excludeBorderParticles):
                 # Check if the particle (as a volume, sphere) overlaps with a particle alreadey in the list.
-                if not any(particle.overlap_with(cx, cy, cz, r + minSpacing)
+                if not any(particle.overlap_with(cx, cy, cz, r + MinSpacing)
                            for particle in self.particles):
                     # The particle doesn't overlap any other particle: place it.
                     particle = Particle(cx, cy, cz, r)
@@ -156,21 +156,21 @@ class Particles:
 FOVHeight = 2048
 FOVWidth = 2048
 # Sampling Volume Depth, pixel units
-SVDepth = 2
+SVDepth = 200
 
-Background_Brightness = 255
-Foreground_Brightness = 0 # color of the particles
+BackgroundBrightness = 255
+ForegroundBrightness = 0 # color of the particles
 
 # Normal distribution of the particle sizes (by number) in pixel units
 x_stdev =  2.76/2.0  # Px
-x_median = 100.0  # Px
+x_median = 20 # Px
 StrictMonodisperse = False # if set to True, stdev_x is ignored
 
 # Drawing parameters
 NumOfFrames = 500 # number of frames
-NumOfParticlesPerImage = 30 # average number of particles per generation volume
+NumOfParticlesPerImage = 400 # average number of particles per generation volume
 excludeBorderParticles = False # True -> do not draw particles crossing the edges of the field of view
-minSpacing = 2 # allowing for a minimum space between the particles (3D)
+MinSpacing = 2 # allowing for a minimum space between the particles (3D)
 
 # Pixel size and magnification
 # In order to compare particle size results calculated by this script in
@@ -178,6 +178,11 @@ minSpacing = 2 # allowing for a minimum space between the particles (3D)
 PixelWidth = 5.5 # unit µm
 invMagnification = 1.0  
 effPixelWidth = invMagnification * PixelWidth  
+
+# Histogramm settings
+NumberofSizeClasses = 90
+x_min = effPixelWidth
+x_max = max(FOVHeight, FOVWidth)*effPixelWidth
 
 # Create the particle drawing object
 particles = Particles(width=FOVWidth, height=FOVHeight, depth=SVDepth, n=NumOfParticlesPerImage, x_median=x_median, x_sigma=x_stdev, monodisperse = StrictMonodisperse)
@@ -187,10 +192,10 @@ np.random.seed()
 for j in range(NumOfFrames): 
     # Create the empfty image array
     image = np.empty((FOVHeight,FOVWidth), 'uint8')
-    image[:,:] = Background_Brightness
+    image[:,:] = BackgroundBrightness
     # Generate and print the particles image by image 
-    particles.generate_particles(image, excludeBorderParticles, minSpacing)       
-    particles.print_particles(image, Foreground_Brightness) 
+    particles.generate_particles(image, excludeBorderParticles, MinSpacing)       
+    particles.print_particles(image, ForegroundBrightness) 
 
     # Collect all images into an image stack
     print("Frame: ",j + 1)
@@ -204,37 +209,42 @@ for j in range(NumOfFrames):
 # It may be preferred not to create the stack and output the images directly
 # one by one.
 image_stack = np.transpose(image_stack, (2,0,1))
-imsave('image_stack.tif', image_stack)
+imsave('image_stack.tif', image_stack, compression='zlib') #, compressionargs={'level': 8}, predictor=True)
   
 print("\neffPixelWidth: ", effPixelWidth)
-
-particle_Sizes = np.array(np.asarray(particles.particles_sizes), 'float64')*effPixelWidth
-boundary_Particles = particles.boundary_particles
-
-print("\nPSD's p-values of all particles on picture:")
-bins, X, Q_0  = ComputePSD(particle_Sizes)
-
-NumOfNonBorderParticles = 0
-for boundaryParticle in particles.boundary_particles:   
-    if not boundaryParticle:
-        NumOfNonBorderParticles = NumOfNonBorderParticles+1
-        
-nonborderParticle_Sizes = np.zeros(NumOfNonBorderParticles)
-
-k=0
-j=0
-for boundaryParticle in particles.boundary_particles:   
-    if not boundaryParticle:
-        nonborderParticle_Sizes[k] = particle_Sizes[j]
-        k = k+1
-    j = j+1
-
-print("\nPSD's p-values of all non-border particles:")
-bins_non, X_non, Q_0_non  = ComputePSD(nonborderParticle_Sizes)
 
 # Display a single image as an example
 from matplotlib import pyplot as plt
 plt.imshow(image_stack[1], cmap='gray')
 plt.show()
-plt.semilogx(X, Q_0)
-plt.semilogx(X_non, Q_0_non)
+
+if StrictMonodisperse == False:
+    particle_Sizes = np.array(np.asarray(particles.particles_sizes), 'float64')*effPixelWidth
+    boundary_Particles = particles.boundary_particles
+    
+    print("\nPSD's p-values of all particles on picture:")
+    bins, X, Q_0  = ComputePSD(particle_Sizes, x_min, x_max, NumberofSizeClasses)
+    
+    NumOfNonBorderParticles = 0
+    for boundaryParticle in particles.boundary_particles:   
+        if not boundaryParticle:
+            NumOfNonBorderParticles = NumOfNonBorderParticles+1
+            
+    nonborderParticle_Sizes = np.zeros(NumOfNonBorderParticles)
+    
+    k=0
+    j=0
+    for boundaryParticle in particles.boundary_particles:   
+        if not boundaryParticle:
+            nonborderParticle_Sizes[k] = particle_Sizes[j]
+            k = k+1
+        j = j+1
+
+    print("\nNumber of particles: ", len(particle_Sizes))
+    print("\nNumber of non border particles: ", len(nonborderParticle_Sizes))
+
+    print("\nPSD's p-values of all non-border particles:")
+    bins_non, X_non, Q_0_non  = ComputePSD(nonborderParticle_Sizes, x_min, x_max, NumberofSizeClasses)
+
+    plt.semilogx(X, Q_0)
+    plt.semilogx(X_non, Q_0_non)
