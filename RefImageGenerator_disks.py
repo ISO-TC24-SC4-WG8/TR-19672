@@ -3,7 +3,8 @@
 import math
 import numpy as np
 from tifffile import imsave
-from skimage.draw import disk
+# from skimage.draw import disk
+from myskidraw import disk
 
 def ComputePSD(particle_Sizes, x_min, x_max, nbins):
     
@@ -156,20 +157,20 @@ class Particles:
 FOVHeight = 2048
 FOVWidth = 2048
 # Sampling Volume Depth, pixel units
-SVDepth = 200
+SVDepth = 2
 
 BackgroundBrightness = 255
 ForegroundBrightness = 0 # color of the particles
 
 # Normal distribution of the particle sizes (by number) in pixel units
 x_stdev =  2.76/2.0  # Px
-x_median = 20 # Px
-StrictMonodisperse = False # if set to True, stdev_x is ignored
+x_median = 15 # Px
+StrictMonodisperse = True # if set to True, stdev_x is ignored
 
 # Drawing parameters
-NumOfFrames = 500 # number of frames
-NumOfParticlesPerImage = 400 # average number of particles per generation volume
-excludeBorderParticles = False # True -> do not draw particles crossing the edges of the field of view
+NumOfFrames = 100 # number of frames
+NumOfParticlesPerImage = 50 # average number of particles per generation volume
+excludeBorderParticles = True # True -> do not draw particles crossing the edges of the field of view
 MinSpacing = 2 # allowing for a minimum space between the particles (3D)
 
 # Pixel size and magnification
