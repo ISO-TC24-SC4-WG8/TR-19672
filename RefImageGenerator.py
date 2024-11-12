@@ -159,7 +159,7 @@ class Particle:
         return d < (r_mcc + self.r_mcc)
 
     def __repr__(self):
-        return f"Particle(r={self.r}, center=({self.cx}, {self.cy}, {self.cz}))"
+        return f"Particle(r_mcc={self.r_mcc}, center=({self.cx}, {self.cy}, {self.cz}))"
 
 
 class CircularParticle(Particle):
