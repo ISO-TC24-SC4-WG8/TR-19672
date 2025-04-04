@@ -68,8 +68,10 @@ def compute_psd(particle_sizes, x_min, x_max, nbins):
 
     for p in percentiles:
         # Perform log-scale interpolation
-        log_interpolated = np.interp(p, Q_0, np.log(X))
-        interpolated_value = np.exp(log_interpolated)
+            # log_interpolated = np.interp(p, Q_0, np.log(X))
+            # interpolated_value = np.exp(log_interpolated)
+        # Perform linear scale interpolation
+        interpolated_value = np.interp(p, Q_0, X) 
         interpolated_percentiles[f"x_{int(p*100)}"] = interpolated_value
         print(f"Q_0: {p:.2f}, X: {interpolated_value:.3f}")
 
@@ -114,13 +116,8 @@ class Particle:
     def _touches_boundary(self, img_shape):
         """Check if the particle touches the image boundaries."""
         img_height, img_width = img_shape
-        # TODO: Resolve the difference to the boundary check in _place_particle().
+        # TODO: Resolve problems with the boundary check
         # Define: Where is the coordinate of a pixel? At the center or at the lower left corner of the pixel (preferred)
-        # return (
-        #     (self.cx - self.r_mcc) < 0 or 
-        #     (self.cy - self.r_mcc) < 0 or 
-        #     (self.cx + self.r_mcc) > img_width or 
-        #     (self.cy + self.r_mcc) > img_height )
         return (
             int(self.cx - self.r_mcc - 0.5) <= 0 or 
             int(self.cy - self.r_mcc - 0.5) <= 0 or 
@@ -219,7 +216,7 @@ class CircularParticle(Particle):
 
         # Draw radius
         circle_radius = self.size_x_A / 2
-        # Check if the center lies within bounds.     
+        # Check if the particle lies within bounds.     
         self.isboundary = self._touches_boundary(image.shape) 
         self.isdrawn = False
         if not (exclude_border and self.isboundary):
@@ -227,20 +224,6 @@ class CircularParticle(Particle):
             image[rr, cc] = ForegroundBrightness
             self.isdrawn = True
         
-        # if self._is_within_bounds(image.shape):
-        #     rr, cc = disk((self.cx, self.cy), circle_radius, shape=image.shape)
-        #     # TODO: check whether the following code line makes a difference. It should, because that's what matters.
-        #     # it is important not to convert to int. They are explicitly double values
-        #     # rr, cc = disk((int(self.cy), int(self.cx)), int(self.r), shape=image.shape)
-        #     image[rr, cc] = ForegroundBrightness
-        #     self.isdrawn = True
-
-        #     # Check if the particle touches the boundary
-        #     self.isboundary = self._touches_boundary(image.shape)
-        # else:
-        #     self.isdrawn = False
-        #     self.isboundary = False
-
     def __repr__(self):
         return (
             f"SphericalParticle(diameter={self.size_x_A}, "
@@ -270,7 +253,7 @@ class EllipseParticle(Particle):
         center : tuple (cx, cy, cz) of float
             Geometrical center of the particle in the measurement volume.
         rotation : float
-            Rotation of the ellipse in radians (range: -PI to PI), counterclockwise.
+            Rotation of the ellipse in radians (range: -PI to PI), counterclockwise with respect to the column-axis.
         """
         self.x_major = x_ecd / math.sqrt(myshape.ratio)
         self.x_minor = self.x_major * myshape.ratio
@@ -297,13 +280,27 @@ class EllipseParticle(Particle):
         img_height, img_width = img_shape
         half_major = self.size_x_Lmax / 2
         half_minor = self.size_x_Lmin / 2
-        # Calculate the extreme points of the rotated ellipse
-        max_x = self.cx + half_major * abs(math.cos(self.rotation)) + half_minor * abs(math.sin(self.rotation))
-        min_x = self.cx - half_major * abs(math.cos(self.rotation)) - half_minor * abs(math.sin(self.rotation))
-        max_y = self.cy + half_major * abs(math.sin(self.rotation)) + half_minor * abs(math.cos(self.rotation))
-        min_y = self.cy - half_major * abs(math.sin(self.rotation)) - half_minor * abs(math.cos(self.rotation))
 
-        return ( min_x - 0.5 < 0 or min_y -0.5 < 0 or max_x + 0.5 > img_width or max_y + 0.5 > img_height )
+        # Caclulate the half width and half height of the bounding box
+        cos_phi = math.cos(self.rotation)
+        sin_phi = math.sin(self.rotation)
+        half_width_x = math.sqrt(math.pow(half_major * sin_phi, 2) + math.pow(half_minor * cos_phi, 2))
+        half_height_y = math.sqrt(math.pow(half_major * cos_phi, 2) + math.pow(half_minor * sin_phi, 2))
+
+        # Calculate the minimum and maximum x and y coordinates of the bounding box
+        min_x = self.cx - half_width_x
+        max_x = self.cx + half_width_x
+        min_y = self.cy - half_height_y
+        max_y = self.cy + half_height_y
+
+        touches = (
+            min_x - 0.5 <= 0 or
+            min_y - 0.5 <= 0 or
+            max_x + 0.5 >= img_width or
+            max_y + 0.5 >= img_height
+        )
+
+        return touches
 
     def draw(self, image, ForegroundBrightness, exclude_border):
         """
@@ -333,21 +330,6 @@ class EllipseParticle(Particle):
             )
             image[rr, cc] = ForegroundBrightness            
             self.isdrawn = True
-
-        # # Ensure the particle's center is within the image bounds
-        # if self._is_within_bounds(image.shape):
-        #     rr, cc = ellipse(
-        #         self.cy, self.cx, self.size_x_Lmax / 2, self.size_x_Lmin / 2,
-        #         shape=image.shape, rotation=self.rotation
-        #     )
-        #     image[rr, cc] = ForegroundBrightness
-        #     self.isdrawn = True
-
-        #     # Check if the particle touches the image boundary
-        #     self.isboundary = self._touches_boundary(image.shape)
-        # else:
-        #     self.isdrawn = False
-        #     self.isboundary = False
             
     def __repr__(self):
         return (
@@ -577,7 +559,7 @@ class PShapeEllipse(PShape):
         float
             The radius of the minimum circumscribed circle of the shape.
         """
-        return x_ecd / math.sqrt(self.ellipse_ratio)
+        return x_ecd / math.sqrt(self.ellipse_ratio) / 2.0
 
     # def area(self, x_major, x_minor):
     #     """Calculate the area of the ellipse based on its major and minor axes."""
@@ -792,7 +774,7 @@ class ImageGenerator:
         foreground_brightness : int, optional
             Brightness value of the particles (0=black, 255=white).
         exclude_border : bool, optional
-            Whether to exclude particles touching the image borders.
+            Whether to exclude particles touching the image borders from beeing drawn.
         min_spacing : float, optional
             Minimum spacing between particles.
         
@@ -818,10 +800,10 @@ class ImageGenerator:
 ##############################################################################
 
 # Drawing parameters
-NUM_OF_FRAMES = 200 # number of frames
+NUM_OF_FRAMES = 100 # number of frames
 WIDTH = 2048        # image resolution, dimension 1
 HEIGHT = 2048       # image resolution, dimension 2
-SVDEPTH = 2         # depth, dimension 3 of measurement volume
+SVDEPTH = 2048       # depth, dimension 3 of measurement volume
 
 # Pixel size and magnification
 # In order to compare particle size results calculated by this script in micrometers
@@ -840,8 +822,8 @@ if __name__ == "__main__":
     from tifffile import imsave #, TiffWriter
     # Example usage demonstrating the functionality of the classes
     # Instantiate a shape object, for example an ellipse
-    # my_shape = PShapeCircle()
-    my_shape = PShapeEllipse(ratio=0.75)  
+    my_shape = PShapeCircle()
+    # my_shape = PShapeEllipse(ratio=0.75)  
     # my_shape = PShapeSuperEllipse(0.1, 20)
 
     # Instantiate the ImageGenerator with the ellipse shape
@@ -855,7 +837,7 @@ if __name__ == "__main__":
 
     # Set the particle size distribution for demonstration
     image_generator.set_psd(
-        x_median=60,       # Median particle size (equivalent diameter)
+        x_median=60,       # Median particle size (equivalent circular diameter)
         x_stdev=1.8,       # Standard deviation for log-normal distribution
         strict_monodisperse=False
     )
